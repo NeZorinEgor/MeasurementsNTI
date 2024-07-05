@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мониторинг данных в реальном времени</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f3f4f6;
+            color: #1a202c;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .plot-container {
+            border: 1px solid #cbd5e0;
+            background-color: #ffffff;
+            margin-top: 20px;
+            padding: 20px;
+        }
+
+        .plot-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .plot {
+            margin-top: 20px;
+        }
+
+        .form-container {
+            margin-top: 40px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 8px;
+            font-size: 1rem;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            margin-bottom: 16px;
+        }
+
+        .form-submit {
+            padding: 10px 20px;
+            background-color: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .form-submit:hover {
+            background-color: #357db5;
+        }
+    </style>
+</head>
+<body>
+<div class="container mx-auto">
+    <h1 class="text-3xl mt-8 mb-4 font-bold">Мониторинг данных в реальном времени</h1>
+    <p class="text-lg mb-8">Раздел отображает данные в реальном времени с двух устройств: FC28 и DHT11, показывая последние 30 значений для каждого из них.</p>
+
+    <div class="plot-container">
+        <h2 class="plot-title">Устройство FC28 - Влажность почвы</h2>
+        <div id="soilMoisturePlot" class="plot"></div>
+    </div>
+
+    <div class="plot-container">
+        <h2 class="plot-title">Устройство DHT11</h2>
+        <div class="flex">
+            <div id="temperaturePlot" class="w-1/2 plot"></div>
+            <div id="humidityPlot" class="w-1/2 plot"></div>
+        </div>
+    </div>
+
+    <div class="form-container">
+        <h1 class="text-3xl mt-8 mb-4 font-bold">Построение графиков за текущий период</h1>
+        <p class="text-lg mb-8">Выберите промежуток времени, за который нужно отобразить данные</p>
+        <div class="form-group">
+            <label for="fromDate" class="form-label">Дата и время от (ГГГГ-ММ-ДД ЧЧ:ММ:СС):</label>
+            <input type="text" id="fromDate" name="fromDate" placeholder="Введите дату и время" class="form-input">
+        </div>
+        <div class="form-group">
+            <label for="toDate" class="form-label">Дата и время до (ГГГГ-ММ-ДД ЧЧ:ММ:СС):</label>
+            <input type="text" id="toDate" name="toDate" placeholder="Введите дату и время" class="form-input">
+        </div>
+        <button onclick="fetchAndPlotData()" class="form-submit">Запросить и построить графики</button>
+
+        <div class="plot-container">
+            <h2 class="plot-title">Устройство FC28 - Влажность почвы</h2>
+            <div id="temperatureChart"></div>
+        </div>
+        <div class="plot-container">
+            <h2 class="plot-title">Устройство DHT11</h2>
+            <div class="flex space-x-4">
+                <div id="humidityChart" class="w-1/2 plot"></div>
+                <div id="soilMoistureChart" class="w-1/2 plot"></div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
+<script>
+    // WebSocket for FC28
+    const socketFC28 = new WebSocket("ws://0.0.0.0/v1/FC28/ws");
+
+    let soilMoistureY = [];
+    let soilMoistureX = [];
+
+    let soilMoistureTrace = {
+        x: soilMoistureX,
+        y: soilMoistureY,
+        mode: 'lines+markers',
+        name: 'Soil Moisture',
+        line: {shape: 'spline', color: 'green'},
+        type: 'scatter'
+    };
+
+    Plotly.newPlot('soilMoisturePlot', [soilMoistureTrace], {
+        title: 'Soil Moisture Over Time',
+        xaxis: {title: 'Time'},
+        yaxis: {title: 'Soil Moisture (%)'}
+    });
+
+    socketFC28.onopen = function(event) {
+        console.log("WebSocket FC28 is open now.");
+    };
+
+    socketFC28.onmessage = async function(event) {
+        try {
+            let data = JSON.parse(event.data);
+
+            // Extract values and timestamps from JSON data
+            let newValues = data.map(item => item.soil_moisture);
+            let newTimestamps = data.map(item => item.register_at);
+
+            soilMoistureX = newTimestamps.slice(-30);
+            soilMoistureY = newValues.slice(-30);
+
+            await Plotly.update('soilMoisturePlot', {
+                x: [soilMoistureX],
+                y: [soilMoistureY]
+            });
+
+        } catch (error) {
+            console.error("Error processing WebSocket message:", error);
+        }
+    };
+
+    socketFC28.onclose = function(event) {
+        console.log("WebSocket FC28 is closed now.");
+    };
+
+    socketFC28.onerror = function(error) {
+        console.log("WebSocket FC28 error:", error);
+    };
+
+    // WebSocket for DHT11
+    const socketDHT11 = new WebSocket("ws://0.0.0.0/v1/DHT11/ws");
+
+    let temperatureY = [];
+    let temperatureX = [];
+
+    let humidityY = [];
+    let humidityX = [];
+
+    let temperatureTrace = {
+        x: temperatureX,
+        y: temperatureY,
+        mode: 'lines+markers',
+        name: 'Temperature',
+        line: {shape: 'spline', color: 'red'},
+        type: 'scatter'
+    };
+
+    let humidityTrace = {
+        x: humidityX,
+        y: humidityY,
+        mode: 'lines+markers',
+        name: 'Air Humidity',
+        line: {shape: 'spline', color: 'blue'},
+        type: 'scatter'
+    };
+
+    Plotly.newPlot('temperaturePlot', [temperatureTrace], {
+        title: 'Temperature Over Time',
+        xaxis: {title: 'Time'},
+        yaxis: {title: 'Temperature (°C)'}
+    });
+
+    Plotly.newPlot('humidityPlot', [humidityTrace], {
+        title: 'Air Humidity Over Time',
+        xaxis: {title: 'Time'},
+        yaxis: {title: 'Air Humidity (%)'}
+    });
+
+    socketDHT11.onopen = function(event) {
+        console.log("WebSocket DHT11 is open now.");
+    };
+
+    socketDHT11.onmessage = async function(event) {
+        try {
+            let data = JSON.parse(event.data);
+
+            // Extract values and timestamps from JSON data
+            let newTemperatureValues = data.map(item => item.temperature);
+            let newHumidityValues = data.map(item => item.air_humidity);
+            let newTimestamps = data.map(item => item.register_at);
+
+            temperatureX = newTimestamps.slice(-30);
+            temperatureY = newTemperatureValues.slice(-30);
+
+            humidityX = newTimestamps.slice(-30);
+            humidityY = newHumidityValues.slice(-30);
+
+            await Plotly.update('temperaturePlot', {
+                x: [temperatureX],
+                y: [temperatureY]
+            });
+
+            await Plotly.update('humidityPlot', {
+                x: [humidityX],
+                y: [humidityY]
+            });
+
+        } catch (error) {
+            console.error("Error processing WebSocket message:", error);
+        }
+    };
+
+    socketDHT11.onclose = function(event) {
+        console.log("WebSocket DHT11 is closed now.");
+    };
+
+    socketDHT11.onerror = function(error) {
+        console.log("WebSocket DHT11 error:", error);
+    };
+
+    // Form submission handling
+    const dataRangeForm = document.getElementById('dataRangeForm');
+
+    dataRangeForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+
+        const fromDate = document.getElementById('fromDate').value;
+        const toDate = document.getElementById('toDate').value;
+
+        // Perform GET request with fromDate and toDate
+        const url = `http://example.com/data?from=${fromDate}&to=${toDate}`;
+
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+
+            console.log('Received data:', data);
+
+
+        } catch (error) {
+            console.error('Error fetching data:', error);
+        }
+    });
+
+    async function fetchAndPlotData() {
+            try {
+                const fromDate = document.getElementById('fromDate').value.trim();
+                const toDate = document.getElementById('toDate').value.trim();
+
+                if (!isValidDateTimeFormat(fromDate) || !isValidDateTimeFormat(toDate)) {
+                    alert('Please enter dates and times in the format YYYY-MM-DD HH:MM:SS');
+                    return;
+                }
+
+                const dht11Url = 'http://0.0.0.0/v1/DHT11/dht11_data';
+                const fc28Url = 'http://0.0.0.0/v1/FC28/fc28_data';
+
+                const temperatureData = await fetchData(dht11Url, fromDate, toDate);
+                const humidityData = await fetchData(dht11Url, fromDate, toDate);
+                const soilMoistureData = await fetchData(fc28Url, fromDate, toDate);
+
+                plotTemperature(temperatureData);
+                plotHumidity(humidityData);
+                plotSoilMoisture(soilMoistureData);
+            } catch (error) {
+                console.error('Error fetching or plotting data:', error);
+            }
+        }
+
+        async function fetchData(url, fromDate, toDate) {
+            try {
+                const formattedFromDate = encodeURIComponent(fromDate);
+                const formattedToDate = encodeURIComponent(toDate);
+                const apiUrl = `${url}?from_date=${formattedFromDate}&to_date=${formattedToDate}`;
+
+                const response = await fetch(apiUrl);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('Error fetching data from', url, ':', error);
+                return [];
+            }
+        }
+
+        function isValidDateTimeFormat(dateTimeString) {
+            // Проверяем, что строка соответствует формату YYYY-MM-DD HH:MM:SS
+            const regex = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+            return regex.test(dateTimeString);
+        }
+
+        function plotTemperature(data) {
+            const dates = data.map(item => item.register_at);
+            const temperatures = data.map(item => item.temperature);
+
+            const trace = {
+                x: dates,
+                y: temperatures,
+                mode: 'lines',
+                type: 'scatter',
+                name: 'Temperature'
+            };
+
+            const layout = {
+                title: 'Temperature over Time',
+                xaxis: {
+                    title: 'Time'
+                },
+                yaxis: {
+                    title: 'Temperature (°C)'
+                }
+            };
+
+            const config = {
+                responsive: true
+            };
+
+            Plotly.newPlot('temperatureChart', [trace], layout, config);
+        }
+
+        function plotHumidity(data) {
+            const dates = data.map(item => item.register_at);
+            const humidities = data.map(item => item.air_humidity);
+
+            const trace = {
+                x: dates,
+                y: humidities,
+                mode: 'lines',
+                type: 'scatter',
+                name: 'Humidity'
+            };
+
+            const layout = {
+                title: 'Humidity over Time',
+                xaxis: {
+                    title: 'Time'
+                },
+                yaxis: {
+                    title: 'Humidity (%)'
+                }
+            };
+
+            const config = {
+                responsive: true
+            };
+
+            Plotly.newPlot('humidityChart', [trace], layout, config);
+        }
+
+        function plotSoilMoisture(data) {
+            const dates = data.map(item => item.register_at);
+            const soilMoistures = data.map(item => item.soil_moisture);
+
+            const trace = {
+                x: dates,
+                y: soilMoistures,
+                mode: 'lines',
+                type: 'scatter',
+                name: 'Soil Moisture'
+            };
+
+            const layout = {
+                title: 'Soil Moisture over Time',
+                xaxis: {
+                    title: 'Time'
+                },
+                yaxis: {
+                    title: 'Soil Moisture'
+                }
+            };
+
+            const config = {
+                responsive: true
+            };
+
+            Plotly.newPlot('soilMoistureChart', [trace], layout, config);
+        }
+</script>
